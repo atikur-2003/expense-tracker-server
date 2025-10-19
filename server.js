@@ -31,7 +31,7 @@ async function run() {
     const expenseCollection = db.collection("expenses");
 
     // api to add income to database
-    app.post("/income", async (req, res) => {
+    app.post("/incomes", async (req, res) => {
       try {
         const income = req.body;
         income.createdAt = new Date();
@@ -44,24 +44,37 @@ async function run() {
       }
     });
 
+    // Get all incomes
+    app.get("/incomes", async (req, res) => {
+      const result = await incomeCollection.find().toArray();
+      res.send(result);
+    });
 
     // get summary of total balance, total income and total expense
     app.get("/summary", async (req, res) => {
       try {
         const [incomeSum, expenseSum] = await Promise.all([
           incomeCollection
-            .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
+            .aggregate([
+              { $addFields: { amount: { $toDouble: "$amount" } } },
+              { $group: { _id: null, total: { $sum: "$amount" } } },
+            ])
             .toArray(),
           expenseCollection
-            .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
+            .aggregate([
+              { $addFields: { amount: { $toDouble: "$amount" } } },
+              { $group: { _id: null, total: { $sum: "$amount" } } },
+            ])
             .toArray(),
         ]);
 
         const totalIncome = incomeSum[0]?.total || 0;
         const totalExpense = expenseSum[0]?.total || 0;
+        const balance = totalIncome - totalExpense;
 
-        res.send({ totalIncome, totalExpense });
+        res.send({ totalIncome, totalExpense, balance });
       } catch (error) {
+        console.error("Error fetching summary:", error);
         res.status(500).send({ message: "Error fetching summary", error });
       }
     });
