@@ -27,7 +27,8 @@ async function run() {
     await client.connect();
 
     const db = client.db("Expense_Tracker_DB");
-    const incomesCollection = db.collection("incomes");
+    const incomeCollection = db.collection("incomes");
+    const expenseCollection = db.collection("expenses");
 
     // api to add income to database
     app.post("/income", async (req, res) => {
@@ -35,11 +36,52 @@ async function run() {
         const income = req.body;
         income.createdAt = new Date();
 
-        const result = await incomesCollection.insertOne(income);
+        const result = await incomeCollection.insertOne(income);
         res.status(201).json(result);
       } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Failed to add income" });
+      }
+    });
+
+
+    // get summary of total balance, total income and total expense
+    app.get("/summary", async (req, res) => {
+      try {
+        const [incomeSum, expenseSum] = await Promise.all([
+          incomeCollection
+            .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
+            .toArray(),
+          expenseCollection
+            .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
+            .toArray(),
+        ]);
+
+        const totalIncome = incomeSum[0]?.total || 0;
+        const totalExpense = expenseSum[0]?.total || 0;
+
+        res.send({ totalIncome, totalExpense });
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching summary", error });
+      }
+    });
+
+    // Get all transactions (income + expense)
+    app.get("/transactions", async (req, res) => {
+      try {
+        const [incomes, expenses] = await Promise.all([
+          incomeCollection.find().toArray(),
+          expenseCollection.find().toArray(),
+        ]);
+
+        // Combine and sort by date descending
+        const allTx = [...incomes, ...expenses].sort(
+          (a, b) => new Date(b.date) - new Date(a.date)
+        );
+
+        res.send(allTx);
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching transactions", error });
       }
     });
 
