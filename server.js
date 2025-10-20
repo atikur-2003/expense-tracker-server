@@ -44,10 +44,38 @@ async function run() {
       }
     });
 
+    // api to add expense
+    app.post("/expenses", async (req, res) => {
+      try {
+        const expense = req.body;
+        expense.createdAt = new Date();
+
+        const result = await expenseCollection.insertOne(expense);
+        res.status(201).json(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Failed to add expense" });
+      }
+    });
+
     // Get all incomes
     app.get("/incomes", async (req, res) => {
       const result = await incomeCollection.find().toArray();
       res.send(result);
+    });
+
+    //  Get all expenses
+    app.get("/expenses", async (req, res) => {
+      try {
+        const result = await expenseCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to fetch expenses" });
+      }
     });
 
     // get summary of total balance, total income and total expense
