@@ -4,6 +4,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 require("dotenv").config();
 const { MongoClient, ServerApiVersion } = require("mongodb");
+const { ObjectId } = require("mongodb");
 
 // Middleware
 app.use(cors());
@@ -37,6 +38,10 @@ async function run() {
         income.createdAt = new Date();
 
         const result = await incomeCollection.insertOne(income);
+        const savedIncome = await incomeCollection.findOne({
+          _id: result.insertedId,
+        });
+        res.send(savedIncome);
         res.status(201).json(result);
       } catch (error) {
         console.error(error);
@@ -55,6 +60,54 @@ async function run() {
       } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Failed to add expense" });
+      }
+    });
+
+    // Update income by ID
+    app.put("/incomes/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedIncome = req.body;
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            source: updatedIncome.source,
+            amount: Number(updatedIncome.amount),
+            date: updatedIncome.date,
+            icon: updatedIncome.emoji || updatedIncome.icon || "💰", // handle emoji/icon
+          },
+        };
+
+        const result = await incomeCollection.updateOne(filter, updateDoc);
+
+        if (result.modifiedCount > 0) {
+          res.send({ success: true, message: "Income updated successfully" });
+        } else {
+          res.status(404).send({ success: false, message: "Income not found" });
+        }
+      } catch (error) {
+        console.error("Error updating income:", error);
+        res.status(500).send({ success: false, message: "Server error" });
+      }
+    });
+
+    // Delete income by ID
+    app.delete("/incomes/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await incomeCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount > 0) {
+          res.send({ success: true, message: "Income deleted successfully" });
+        } else {
+          res.status(404).send({ success: false, message: "Income not found" });
+        }
+      } catch (error) {
+        console.error("Error deleting income:", error);
+        res.status(500).send({ success: false, message: "Server error" });
       }
     });
 
