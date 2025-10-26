@@ -3,12 +3,38 @@ const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 5000;
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
-const { ObjectId } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const admin = require("firebase-admin");
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// firebase admin key decoded
+const decodedKey = Buffer.from(process.env.FB_ADMIN_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decodedKey);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+// Verify Firebase Token Middleware
+async function verifyFirebaseToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader)
+    return res.status(401).send({ message: "unauthorized access" });
+
+  const token = authHeader.split(" ")[1];
+  try {
+    const decodedUser = await admin.auth().verifyIdToken(token);
+    req.user = decodedUser;
+    next();
+  } catch (error) {
+    return res.status(403).send({ message: "Invalid or expired token" });
+  }
+}
 
 // database connection
 const uri = process.env.MONGODB_URI;
@@ -111,10 +137,21 @@ async function run() {
       }
     });
 
-    // Get all incomes
-    app.get("/incomes", async (req, res) => {
-      const result = await incomeCollection.find().toArray();
-      res.send(result);
+   
+    //  Get all incomes for the logged-in user
+    app.get("/incomes", verifyFirebaseToken, async (req, res) => {
+      try {
+        const email = req.user.email;
+        const incomes = await incomeCollection
+          .find({ userEmail: email })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(incomes);
+      } catch (error) {
+        console.error("Error fetching incomes:", error);
+        res.status(500).send({ message: "Failed to fetch incomes" });
+      }
     });
 
     //  Get all expenses
