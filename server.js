@@ -55,6 +55,10 @@ async function run() {
         expense.createdAt = new Date();
 
         const result = await expenseCollection.insertOne(expense);
+        const savedExpense = await expenseCollection.findOne({
+          _id: result.insertedId,
+        });
+        res.send(savedExpense);
         res.status(201).json(result);
       } catch (error) {
         console.error(error);
@@ -79,6 +83,36 @@ async function run() {
         };
 
         const result = await incomeCollection.updateOne(filter, updateDoc);
+
+        if (result.modifiedCount > 0) {
+          res.send({ success: true, message: "Income updated successfully" });
+        } else {
+          res.status(404).send({ success: false, message: "Income not found" });
+        }
+      } catch (error) {
+        console.error("Error updating income:", error);
+        res.status(500).send({ success: false, message: "Server error" });
+      }
+    });
+
+
+    // Update expense by ID
+    app.put("/expenses/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedExpense = req.body;
+
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            source: updatedExpense.source,
+            amount: Number(updatedExpense.amount),
+            date: updatedExpense.date,
+            icon: updatedExpense.emoji || updatedExpense.icon || "💰", 
+          },
+        };
+
+        const result = await expenseCollection.updateOne(filter, updateDoc);
 
         if (result.modifiedCount > 0) {
           res.send({ success: true, message: "Income updated successfully" });
@@ -204,6 +238,27 @@ async function run() {
         }
       } catch (error) {
         console.error("Error deleting income:", error);
+        res.status(500).send({ success: false, message: "Server error" });
+      }
+
+    });
+
+
+    // Delete expense by ID
+    app.delete("/expenses/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await expenseCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount > 0) {
+          res.send({ success: true, message: "Expense deleted successfully" });
+        } else {
+          res.status(404).send({ success: false, message: "Expense not found" });
+        }
+      } catch (error) {
+        console.error("Error deleting Expense:", error);
         res.status(500).send({ success: false, message: "Server error" });
       }
     });
