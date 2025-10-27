@@ -4,37 +4,10 @@ const app = express();
 const port = process.env.PORT || 5000;
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const admin = require("firebase-admin");
 
 // Middleware
-app.use(cors());
 app.use(express.json());
-
-// firebase admin key decoded
-const decodedKey = Buffer.from(process.env.FB_ADMIN_KEY, "base64").toString(
-  "utf8"
-);
-const serviceAccount = JSON.parse(decodedKey);
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-
-// Verify Firebase Token Middleware
-async function verifyFirebaseToken(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader)
-    return res.status(401).send({ message: "unauthorized access" });
-
-  const token = authHeader.split(" ")[1];
-  try {
-    const decodedUser = await admin.auth().verifyIdToken(token);
-    req.user = decodedUser;
-    next();
-  } catch (error) {
-    return res.status(403).send({ message: "Invalid or expired token" });
-  }
-}
+app.use(cors());
 
 // database connection
 const uri = process.env.MONGODB_URI;
@@ -118,36 +91,17 @@ async function run() {
       }
     });
 
-    // Delete income by ID
-    app.delete("/incomes/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const result = await incomeCollection.deleteOne({
-          _id: new ObjectId(id),
-        });
-
-        if (result.deletedCount > 0) {
-          res.send({ success: true, message: "Income deleted successfully" });
-        } else {
-          res.status(404).send({ success: false, message: "Income not found" });
-        }
-      } catch (error) {
-        console.error("Error deleting income:", error);
-        res.status(500).send({ success: false, message: "Server error" });
-      }
-    });
-
-   
     //  Get all incomes for the logged-in user
-    app.get("/incomes", verifyFirebaseToken, async (req, res) => {
+    app.get("/incomes", async (req, res) => {
       try {
-        const email = req.user.email;
-        const incomes = await incomeCollection
-          .find({ userEmail: email })
-          .sort({ createdAt: -1 })
+        const email = req.query.email;
+        const filter = email ? { userEmail: email } : {};
+        const income = await incomeCollection
+          .find(filter)
+          .sort({ createdAt: 1 })
           .toArray();
 
-        res.send(incomes);
+        res.send(income);
       } catch (error) {
         console.error("Error fetching incomes:", error);
         res.status(500).send({ message: "Failed to fetch incomes" });
@@ -157,11 +111,13 @@ async function run() {
     //  Get all expenses
     app.get("/expenses", async (req, res) => {
       try {
-        const result = await expenseCollection
-          .find()
-          .sort({ createdAt: -1 })
+        const email = req.query.email;
+        const filter = email ? { userEmail: email } : {};
+        const expense = await expenseCollection
+          .find(filter)
+          .sort({ createdAt: 1 })
           .toArray();
-        res.send(result);
+        res.send(expense);
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Failed to fetch expenses" });
@@ -171,15 +127,24 @@ async function run() {
     // get summary of total balance, total income and total expense
     app.get("/summary", async (req, res) => {
       try {
+        const email = req.query.email?.toLowerCase();
+        if (!email) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+
+        const filter = { userEmail: email };
+
         const [incomeSum, expenseSum] = await Promise.all([
           incomeCollection
             .aggregate([
+              { $match: filter },
               { $addFields: { amount: { $toDouble: "$amount" } } },
               { $group: { _id: null, total: { $sum: "$amount" } } },
             ])
             .toArray(),
           expenseCollection
             .aggregate([
+              { $match: filter },
               { $addFields: { amount: { $toDouble: "$amount" } } },
               { $group: { _id: null, total: { $sum: "$amount" } } },
             ])
@@ -200,9 +165,16 @@ async function run() {
     // Get all transactions (income + expense)
     app.get("/transactions", async (req, res) => {
       try {
+        const email = req.query.email?.toLowerCase();
+        if (!email) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+
+        const filter = { userEmail: email };
+
         const [incomes, expenses] = await Promise.all([
-          incomeCollection.find().toArray(),
-          expenseCollection.find().toArray(),
+          incomeCollection.find(filter).sort({ date: -1 }).toArray(),
+          expenseCollection.find(filter).sort({ date: -1 }).toArray(),
         ]);
 
         // Combine and sort by date descending
@@ -212,7 +184,27 @@ async function run() {
 
         res.send(allTx);
       } catch (error) {
+        console.error("Error fetching transactions:", error);
         res.status(500).send({ message: "Error fetching transactions", error });
+      }
+    });
+
+    // Delete income by ID
+    app.delete("/incomes/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await incomeCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount > 0) {
+          res.send({ success: true, message: "Income deleted successfully" });
+        } else {
+          res.status(404).send({ success: false, message: "Income not found" });
+        }
+      } catch (error) {
+        console.error("Error deleting income:", error);
+        res.status(500).send({ success: false, message: "Server error" });
       }
     });
 
